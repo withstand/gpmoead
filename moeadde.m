@@ -1,5 +1,5 @@
-function mop_ret = moeadde(mop)
-mop_ret = mop;
+function mopRet = moeadde(mop)
+mopRet = mop;
 %% Input
 %   1) npop:    population size npop
 %   2) nnbr:    neighbour size nnbr
@@ -8,6 +8,11 @@ mop_ret = mop;
 %   5) domain:  [lower_bound; upper_bound]
 %   6) func:    objective function - return [val, std] pair for individual
 %   7) fitness: structure to select fitness function with different arguments
+
+
+%%
+% Retrieve data from mop and store them locally
+%
 npop = mop.npop;
 nobj = mop.nobj;
 nvar = mop.nvar;
@@ -16,24 +21,34 @@ domain = mop.domain;
 L = domain(1,:);
 S = domain(2,:) - L;
 func = mop.func;
+
+% data fields that might not exist
 fitnessStruct = getfieldwithdefault(mop,'fitnessStruct',[]);
+constraintFunc = getfieldwithdefault(mop,'constraint',[]);
+nbrs = getfieldwithdefault(mop,'nbrs',[]);
+pop = getfieldwithdefault(mop,'pop',[]);
+weightArray = getfieldwithdefault(mop, 'weightArray',[]);
+val = getfieldwithdefault(mop,'val',[]);
+std = getfieldwithdefault(mop,'std',[]);
+
 
 %% Initialize
-%   1) weightArray:         the weight vectors
-%   2) nbrs:           the neighours for each individual
 ticID = tic;
-weightArray = getfieldwithdefault(mop, 'weightArray',[]);
-actualLength = size(weightArray,1);
+
+%   1) weightArray:         the weight vectors
 if isempty(weightArray)
     [weightArray, actualLength] = wsdesign(npop,nobj);
+else
+    actualLength = size(weightArray,1);
 end
+
 % Could change npop slightly according to the way of designing weightArray
 if actualLength ~= npop
     npop = actualLength;
 end
 
 
-nbrs = getfieldwithdefault(mop,'nbrs',[]);
+%   2) nbrs:           the neighours for each individual
 if isempty(nbrs)
     nbrs = zeros(npop, nnbr);
     for wi = 1:npop
@@ -42,9 +57,9 @@ if isempty(nbrs)
         nbrs(wi,:) = I(1:nnbr);
     end
 end
+
+
 %   3) pop:         initial population
-pop = getfieldwithdefault(mop,'pop',[]);
-constraintFunc = getfieldwithdefault(mop,'constraint',[]);
 if isempty(pop)
     pop01 = lhsdesign(npop, nvar);
     %     pop01 = rand(npop, nvar);
@@ -63,17 +78,19 @@ if isempty(pop)
         end
     end
 end
+
 %   4) [val,std]:   initial estimations for each individual
-%   5) vr:          ideal objectives
-val = getfieldwithdefault(mop,'val',[]);
-std = getfieldwithdefault(mop,'std',[]);
 if isempty(val)
     [val, std] = func(pop);
 end
+
+%   5) vr:          ideal objectives
 vr = min(val-3*std,[],1);
+
 %   6) fitness:     fitness of
 fitness = zeros(npop,1);
 % fitness = fit_func(val,std, vr);
+
 fprintf('Initialize problem in %f seconds.\n', toc(ticID));
 for step = 1:mop.ngen
     ticIteration = tic;
@@ -81,14 +98,17 @@ for step = 1:mop.ngen
     perm = randperm(npop);
     %
     for i = 1:npop
-        if isempty(mop.fitness_struct.y_ref)
-            fitnessStruct.y_ref = val;
-        end
+
+	%how is this work for MOEA/D-DE, not really needed for it, remove it
+        %if isempty(mop.fitness_struct.y_ref)
+        %    fitnessStruct.y_ref = val;
+        %end
+
         n = perm(i);
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % parameter to control the evaluation %
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        realb = 0.8;
+        realb = 0.8;                          %
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         if (rand < realb)
             type = 1;  % neighbourhood
         else
@@ -116,10 +136,10 @@ for step = 1:mop.ngen
         vr = min([vr; val_c-3*std_c]);
         fitness = evaluatefitness(fitnessStruct,weightArray(n,:),weightArray,val,std, vr);
         
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        % parameter to control the evaluation %
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        nupdate = min(nnbr,max(5, round(nnbr / 5)));
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        % parameter to control the evaluation          %
+        nupdate = min(nnbr,max(5, round(nnbr / 5)));   %
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         sel = randperm(numel(P), nupdate);
         selected = P(sel);
         for si = selected
@@ -134,14 +154,15 @@ for step = 1:mop.ngen
     end
     fprintf('Iterate %d generations, time: %f.\n', step, toc(ticIteration));
 end
-mop_ret.npop = npop; % could be changed by the weightArray design
-mop_ret.pop = pop;
-mop_ret.val = val;
-mop_ret.std = std;
-mop_ret.fitness = fitness;
-mop_ret.weightArray = weightArray;
-mop_ret.nbrs = nbrs;
+mopRet.npop = npop; % could be changed by the weightArray design
+mopRet.pop = pop;
+mopRet.val = val;
+mopRet.std = std;
+mopRet.fitness = fitness;
+mopRet.weightArray = weightArray;
+mopRet.nbrs = nbrs;
 
+% It's arguable whethere to obtain the solutions or produced a Pareto solution from evaluated points
 % PF = [];
 % PS = [];
 % for i=1:npop
@@ -154,11 +175,14 @@ mop_ret.nbrs = nbrs;
 PF = val;
 PS = pop;
 
-mop_ret.PF = PF;
-mop_ret.PS = PS;
+mopRet.PF = PF;
+mopRet.PS = PS;
 
 end
 
+
+%% Evaluate the fitness function with a fitnessStructure
+% For MOEA/D-DE, no need for ei, just negte for negative Tchebycheff decomposition
 function fit = evaluatefitness(fitness_s, w, ws, y_est, y_std, idealpoint)
 if ~isfield(fitness_s,'name')
     fitness_s.name = 'ei';
@@ -174,20 +198,18 @@ switch fitness_s.name
         fit = -obj_dist(:,1);
     otherwise
 end
-
-
-
-
 end
 
+
+%% 
 function ei_ret = ei(weight, y_est, y_std, idealpoint, g_ref)
 obj_dist = te(weight, y_est, y_std, idealpoint);
 u = (g_ref - obj_dist(:,1)) ./ obj_dist(:,2);
 ei_ret = (g_ref - obj_dist(:,1)) .* normcdf(u) + obj_dist(:,2) .* normpdf(u);
 end
 
-function obj_dist = te(weight, y_est, y_std, idealpoint)
 
+function obj_dist = te(weight, y_est, y_std, idealpoint)
 [sampleSize,objDim]=size(y_est);
 if isempty(y_std)
     y_std = zeros(size(y_est));
@@ -216,13 +238,13 @@ for i = 1:ns
     od(1) = yihat(1);
     od(2) = yistd(1);
     for jj = 2:objDim
-        od = gv_max(od(1),od(2), yihat(jj),yistd(jj));
+        od = gvmax(od(1),od(2), yihat(jj),yistd(jj));
     end
     obj_dist(i,:) = od;
 end
 
 
-    function dist = gv_max(mu1, std1, mu2, std2)
+    function dist = gvmax(mu1, std1, mu2, std2)
         tau = sqrt(std1.^2 + std2.^2);
         if sum(tau) == 0
             dist=[max(mu1, mu2) 0];
@@ -236,6 +258,9 @@ end
         end
     end
 end
+
+
+
 
 function [p,P] = matingselection(npop, nbr, size,type)
 %% Randomly select size individuals amone neighbour of n or the whole population
