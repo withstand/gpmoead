@@ -185,7 +185,7 @@ end
 % For MOEA/D-DE, no need for ei, just negte for negative Tchebycheff decomposition
 function fit = evaluatefitness(fitness_s, w, ws, y_est, y_std, idealpoint)
 if ~isfield(fitness_s,'name')
-    fitness_s.name = 'ei';
+    fitness_s.name = 'negte';
 end
 switch fitness_s.name
     case 'ei'
