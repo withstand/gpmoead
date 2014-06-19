@@ -91,28 +91,29 @@ fitness = zeros(npop,1);
 % fitness = fit_func(val,std, vr);
 
 % fprintf('Initialize problem in %f seconds.\n', toc(ticID));
-fprintf('%10s\t%15s\t%15s\t%15s\t%15s\n',...
+fprintf('%6s\t%12s\t%12s\t%12s\t%12s\n',...
     '   ', '    ', '   ','Fitness','    ');
-fprintf('%10s\t%15s\t%15s\t%15s\t%15s\n',...
+fprintf('%6s\t%12s\t%12s\t%12s\t%12s\n',...
     'Iter', 'Time', 'max','min','mean');
 
-for step = 1:mop.ngen
+for iGen = 1:mop.ngen
     ticIteration = tic;
     %% Update
     perm = randperm(npop);
     %
     for i = 1:npop
-
-	%how is this work for MOEA/D-DE, not really needed for it, remove it
+        
+        %how is this work for MOEA/D-DE, not really needed for it, remove it
         %if isempty(mop.fitness_struct.y_ref)
         %    fitnessStruct.y_ref = val;
         %end
-
+        
         n = perm(i);
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % parameter to control the evaluation %
         realb = 0.8;                          %
-	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        realb = 1 - exp(-iGen / (mop.ngen/10));  
         if (rand < realb)
             type = 1;  % neighbourhood
         else
@@ -155,8 +156,8 @@ for step = 1:mop.ngen
             end
         end
     end
-    fprintf('%10d\t%15.4f\t%15.4f\t%15.4f\t%15.4f\n',...
-        step, toc(ticIteration), max(fitness),min(fitness), mean(fitness));
+    fprintf('%6d\t%12.4f\t%12.4f\t%12.4f\t%12.4f\n',...
+        iGen, toc(ticIteration), max(fitness),min(fitness), mean(fitness));
 end
 mopRet.npop = npop; % could be changed by the weightArray design
 mopRet.pop = pop;
@@ -187,81 +188,73 @@ end
 %% Evaluate the fitness function with a fitnessStructure
 % For MOEA/D-DE, no need for ei, just negte for negative Tchebycheff decomposition
 function fit = evaluatefitness( ws, y_est, idealpoint)
-% if ~isfield(fitness_s,'name')
-%     fitness_s.name = 'negte';
-% end
-% switch fitness_s.name
-% %     case 'ei'
-% %         assert(isfield(fitness_s, 'y_ref'));
-% %         ref_obj = te(w, fitness_s.y_ref, [], idealpoint);
-% %         g_ref = min(ref_obj(:,1));
-% %         fit = ei(ws, y_est, y_std, idealpoint, g_ref);
-%     case 'negte'
-        obj_dist = te(ws, y_est, idealpoint);
-        fit = -obj_dist(:,1);
-%     otherwise
-% end
+ns = size(y_est,1);
+obj_dist = max(ws .* (y_est - repmat(idealpoint,ns,1)),[],2);
+fit = -obj_dist;
 end
 
 
-% %% 
-% function ei_ret = ei(weight, y_est, y_std, idealpoint, g_ref)
-% obj_dist = te(weight, y_est, y_std, idealpoint);
-% u = (g_ref - obj_dist(:,1)) ./ obj_dist(:,2);
-% ei_ret = (g_ref - obj_dist(:,1)) .* normcdf(u) + obj_dist(:,2) .* normpdf(u);
+% % %%
+% % function ei_ret = ei(weight, y_est, y_std, idealpoint, g_ref)
+% % obj_dist = te(weight, y_est, y_std, idealpoint);
+% % u = (g_ref - obj_dist(:,1)) ./ obj_dist(:,2);
+% % ei_ret = (g_ref - obj_dist(:,1)) .* normcdf(u) + obj_dist(:,2) .* normpdf(u);
+% % end
+% 
+% 
+% function obj_dist = te(weight, y_est, idealpoint)
+% [sampleSize,~]=size(y_est);
+% % if isempty(y_std)
+% %     y_std = zeros(size(y_est));
+% % end
+% [ns,~] = size(weight);
+% 
+% if ns~=sampleSize
+%     %     if ns == 1
+%     %         weight = repmat(weight,sampleSize,1);
+%     %         ns = sampleSize;
+%     %     elseif sampleSize ==1
+%     %         y_est = repmat(y_est, ns, 1);
+%     % %         y_std = repmat(y_std, ns ,1);
+%     %         %         sampleSize = ns;
+%     %     else
+%     error('Currently not working for multiple weight vs. multiple y.');
+%     %     end
 % end
-
-
-function obj_dist = te(weight, y_est, idealpoint)
-[sampleSize,~]=size(y_est);
-% if isempty(y_std)
-%     y_std = zeros(size(y_est));
+% 
+% 
+% % obj_dist = zeros(ns,1);
+% obj_dist = max(weight .* (y_est - repmat(idealpoint,ns,1)),[],2);
+% 
+% 
+% % for i = 1:ns
+% %     lambda = weight(i, :);
+% %     yihat = lambda .* (y_est(i,:) - idealpoint);
+% %
+% % % %     yistd = lambda .* y_std(i,:);
+% % %     od = yihat(1);
+% % % %     od(2) = yistd(1);
+% % %     for jj = 2:objDim
+% % %         od = max(od(1), yihat(jj));
+% % %     end
+% %     obj_dist(i) = max(yihat);
+% % end
+% 
+% 
+% %     function dist = gvmax(mu1, std1, mu2, std2)
+% %         tau = sqrt(std1.^2 + std2.^2);
+% %         if sum(tau) == 0
+% %             dist=[max(mu1, mu2) 0];
+% %         else
+% %             alpha = (mu1 - mu2) ./ tau;
+% %             dist = [mu1.*normcdf(alpha)+mu2.*normcdf(-alpha)+...
+% %                 tau.*normpdf(alpha)  sqrt(...
+% %                 (mu1.^2+std1.^2).*normcdf(alpha)+...
+% %                 (mu2.^2+std2.^2).*normcdf(-alpha)+...
+% %                 (mu1+mu2).*tau.*normpdf(alpha))];
+% %         end
+% %     end
 % end
-[ns,~] = size(weight);
-
-if ns~=sampleSize
-    if ns == 1
-        weight = repmat(weight,sampleSize,1);
-        ns = sampleSize;
-    elseif sampleSize ==1
-        y_est = repmat(y_est, ns, 1);
-%         y_std = repmat(y_std, ns ,1);
-        %         sampleSize = ns;
-    else
-        error('Currently not working for multiple weight vs. multiple y.');
-    end
-end
-
-
-obj_dist = zeros(ns,1);
-for i = 1:ns
-    lambda = weight(i, :);
-    yihat = lambda .* (y_est(i,:) - idealpoint);
-    
-% %     yistd = lambda .* y_std(i,:);
-%     od = yihat(1);
-% %     od(2) = yistd(1);
-%     for jj = 2:objDim
-%         od = max(od(1), yihat(jj));
-%     end
-    obj_dist(i) = max(yihat);
-end
-
-
-%     function dist = gvmax(mu1, std1, mu2, std2)
-%         tau = sqrt(std1.^2 + std2.^2);
-%         if sum(tau) == 0
-%             dist=[max(mu1, mu2) 0];
-%         else
-%             alpha = (mu1 - mu2) ./ tau;
-%             dist = [mu1.*normcdf(alpha)+mu2.*normcdf(-alpha)+...
-%                 tau.*normpdf(alpha)  sqrt(...
-%                 (mu1.^2+std1.^2).*normcdf(alpha)+...
-%                 (mu2.^2+std2.^2).*normcdf(-alpha)+...
-%                 (mu1+mu2).*tau.*normpdf(alpha))];
-%         end
-%     end
-end
 
 
 

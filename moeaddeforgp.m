@@ -61,10 +61,10 @@ end
 
 %   3) pop:         initial population
 if isempty(pop)
-%     pop01 = lhsdesign(npop, nvar);
+    %     pop01 = lhsdesign(npop, nvar);
     pop01 = rand(npop, nvar);
     pop = pop01 .* repmat(S, npop,1) + repmat(L, npop,1);
-end    
+end
 % regenerate pop for it
 if ~isempty(constraintFunc)
     for iPop = 1:npop
@@ -78,15 +78,15 @@ if ~isempty(constraintFunc)
     end
 end
 
-for iEvaluated = 1:npop
-    while 1
-        if ~mop.isclose(pop(iEvaluated,:))
-            break;
-        end
-        newDesign = rand(1, nvar) .* S + L;
-        pop(iEvaluated,:) = newDesign;
-    end
-end
+% for iEvaluated = 1:npop
+%     while 1
+%         if ~mop.isclose(pop(iEvaluated,:))
+%             break;
+%         end
+%         newDesign = rand(1, nvar) .* S + L;
+%         pop(iEvaluated,:) = newDesign;
+%     end
+% end
 
 
 %   4) [val,std]:   initial estimations for each individual
@@ -102,31 +102,33 @@ fitness = zeros(npop,1);
 % fitness = fit_func(val,std, vr);
 
 % fprintf('Initialize problem in %f seconds.\n', toc(ticID));
-fprintf('%10s\t%15s\t%15s\t%15s\t%15s\n',...
+fprintf('%6s\t%12s\t%12s\t%12s\t%12s\n',...
     '   ', '    ', '   ','Fitness','    ');
-fprintf('%10s\t%15s\t%15s\t%15s\t%15s\n',...
-    'Iter', 'Time', 'max','min','mean');
-for step = 1:mop.ngen
+fprintf('%6s\t%12s\t%12s\t%12s\t%12s\t%6s\n',...
+    'Iter', 'Time', 'max','min','mean','Stall');
+stallGeneration = 0;
+for iGen = 1:mop.ngen
     ticIteration = tic;
     %% Update
     perm = randperm(npop);
     %
+    isStall = 1;
     for i = 1:npop
-
-	%how is this work for MOEA/D-DE, not really needed for it, remove it
+        
+        %how is this work for MOEA/D-DE, not really needed for it, remove it
         %if isempty(mop.fitness_struct.y_ref)
         %    fitnessStruct.y_ref = val;
         %end
-
+        
         n = perm(i);
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % parameter to control the evaluation %
-        realb = 0.8;                          %
-	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        realb = exp(-iGen / (mop.ngen/2));                          %
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         if (rand < realb)
-            type = 1;  % neighbourhood
+            type = 2;   % whole population
         else
-            type = 2;  % whole population
+            type = 1;   % neighbourhood
         end
         
         %% select the indexes of mating parents
@@ -138,8 +140,8 @@ for step = 1:mop.ngen
                 pop(p(2),:), domain);
             %% apply polynomial mutation
             child = realmutaion(child, nvar,domain);
-            if ~mop.isclose(child) && ...
-                    (isempty(constraintFunc) || constraintFunc(child))
+%             if ~mop.isclose(child) && ...
+            if isempty(constraintFunc) || constraintFunc(child)
                 break
             end
         end
@@ -148,13 +150,13 @@ for step = 1:mop.ngen
         
         %% update the reference points and other solution in the neighbourhood
         % or the whole population
-%         vr = min([vr; val_c-3*std_c]);
+        %         vr = min([vr; val_c-3*std_c]);
         fitness = evaluatefitness(fitnessStruct.name,weightArray,val,std,...
             fitnessStruct.idealObjective, fitnessStruct.gRef);
         
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % parameter to control the evaluation          %
-        nupdate = min(nnbr,max(5, round(nnbr / 5)));   %
+        nupdate = min(nnbr,max(4, round(nnbr / 5)));   %
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         sel = randperm(numel(P), nupdate);
         selected = P(sel);
@@ -163,6 +165,8 @@ for step = 1:mop.ngen
                 weightArray(si,:),val_c, std_c,...
                 fitnessStruct.idealObjective, fitnessStruct.gRef(si));
             if fitness(si) < fitness_c  %maximize fitness
+                isStall = 0;
+                stallGeneration = 0;
                 pop(si,:) = child;
                 val(si,:) = val_c;
                 std(si,:) = std_c;
@@ -170,8 +174,20 @@ for step = 1:mop.ngen
             end
         end
     end
-    fprintf('%10d\t%15.4f\t%15.4f\t%15.4f\t%15.4f\n',...
-        step, toc(ticIteration), max(fitness),min(fitness), mean(fitness));
+    
+    if isStall
+        stallGeneration = stallGeneration + 1;
+    end
+    
+
+    fprintf('%6d\t%12.4f\t%12.4f\t%12.4f\t%12.4f\t%6d\n',...        
+        iGen, toc(ticIteration), max(fitness),min(fitness), ...
+        mean(fitness), stallGeneration);
+    
+    
+    if stallGeneration > 20
+        break;
+    end
 end
 mopRet.npop = npop; % could be changed by the weightArray design
 mopRet.pop = pop;
@@ -203,35 +219,37 @@ end
 %% Evaluate the fitness function with a fitnessStructure
 % For MOEA/D-DE, no need for ei, just negte for negative Tchebycheff decomposition
 function fit = evaluatefitness(name,ws, y_est, y_std, idealPoint, gRef)
-% if ~isfield(fitness_s,'name')
-%     fitness_s.name = 'negte';
-% end
+[sampleSize,objDim] = size(y_est);
 
-% idealPoint = fitness_s.vr;
 switch name
-    case 'ei'
-%         assert(isfield(fitness_s, 'yRef'));
-%         ref_obj = te(w, fitness_s.yRef, [], idealpoint);
-%         g_ref = min(ref_obj(:,1));
-%         gRef = fitness_s.gRef;
-        fit = ei(ws, y_est, y_std, idealPoint, gRef);
-    case 'negte'
-        obj_dist = te(ws, y_est, y_std, idealPoint);
-        fit = -obj_dist(:,1);
+    case 'eite'
+        objRet = te(ws, y_est, y_std, idealPoint);
+        fit = ei(objRet, gRef);
+    case 'negte'        
+%         objRet = te(ws, y_est, y_std, idealPoint);
+%         fit = -objRet(:,1);         
+        fit = -max(ws .* (y_est - repmat(idealPoint, sampleSize, 1)),[],2); 
+    case 'wsei'    
+        eiY = zeros(sampleSize, objDim);
+        for i=1:objDim
+            eiY(:,i) = ei([y_est(:,i) y_std(:,i)], idealPoint(i));
+        end
+        fit = sum(ws .* eiY, 2);     
+        % eiY reference zero, no more expected improvement   
     otherwise
 end
 end
 
 
-%% 
-function ei_ret = ei(weight, y_est, y_std, idealpoint, g_ref)
-obj_dist = te(weight, y_est, y_std, idealpoint);
-u = (g_ref - obj_dist(:,1)) ./ obj_dist(:,2);
-ei_ret = (g_ref - obj_dist(:,1)) .* normcdf(u) + obj_dist(:,2) .* normpdf(u);
+%%
+function eiRet = ei(objDistribution, gRef)
+u = (gRef - objDistribution(:,1)) ./ objDistribution(:,2);
+eiRet = (gRef -objDistribution(:,1)) .* normcdf(u) +...
+    objDistribution(:,2) .* normpdf(u);
 end
 
 
-function obj_dist = te(weight, y_est, y_std, idealpoint)
+function objDist = te(weight, y_est, y_std, idealpoint)
 [sampleSize,objDim]=size(y_est);
 % if isempty(y_std)
 %     y_std = zeros(size(y_est));
@@ -239,32 +257,28 @@ function obj_dist = te(weight, y_est, y_std, idealpoint)
 [ns,~] = size(weight);
 
 if ns~=sampleSize
-%     if ns == 1
-%         weight = repmat(weight,sampleSize,1);
-%         ns = sampleSize;
-%     elseif sampleSize ==1
-%         y_est = repmat(y_est, ns, 1);
-%         y_std = repmat(y_std, ns ,1);
-%         %         sampleSize = ns;
-%     else
-        error('Currently not working for multiple weight vs. multiple y.');
+    error('Currently not working for multiple weight vs. multiple y.');
+end
+% obj_dist = zeros(ns,2);
+
+yhat = weight .* (y_est - repmat(idealpoint, ns, 1));
+ystd = weight .* y_std;
+objDist = [yhat(:,1) ystd(:,1)];
+for jj=2:objDim
+    objDist = gvmax(objDist(:,1), objDist(:,2), yhat(:,jj), ystd(:,jj));
+end
+
+% for i = 1:ns
+%     lambda = weight(i, :);
+%     yihat = lambda .* (y_est(i,:) - idealpoint);
+%     yistd = lambda .* y_std(i,:);
+%     od(1) = yihat(1);
+%     od(2) = yistd(1);
+%     for jj = 2:objDim
+%         od = gvmax(od(1),od(2), yihat(jj),yistd(jj));
 %     end
-end
-
-
-obj_dist = zeros(ns,2);
-for i = 1:ns
-    lambda = weight(i, :);
-    yihat = lambda .* (y_est(i,:) - idealpoint);
-    yistd = lambda .* y_std(i,:);
-    od(1) = yihat(1);
-    od(2) = yistd(1);
-    for jj = 2:objDim
-        od = gvmax(od(1),od(2), yihat(jj),yistd(jj));
-    end
-    obj_dist(i,:) = od;
-end
-
+%     obj_dist(i,:) = od;
+% end
 
     function dist = gvmax(mu1, std1, mu2, std2)
         tau = sqrt(std1.^2 + std2.^2);
@@ -272,11 +286,13 @@ end
             dist=[max(mu1, mu2) 0];
         else
             alpha = (mu1 - mu2) ./ tau;
-            dist = [mu1.*normcdf(alpha)+mu2.*normcdf(-alpha)+...
-                tau.*normpdf(alpha)  sqrt(...
-                (mu1.^2+std1.^2).*normcdf(alpha)+...
-                (mu2.^2+std2.^2).*normcdf(-alpha)+...
-                (mu1+mu2).*tau.*normpdf(alpha))];
+            normcdfAlpha = normcdf(alpha);
+            normpdfAlpha = normpdf(alpha);
+            dist = [mu1.*normcdfAlpha+mu2.*(1-normcdfAlpha)+...
+                tau.*normpdfAlpha  sqrt(...
+                (mu1.^2+std1.^2).*normcdfAlpha+...
+                (mu2.^2+std2.^2).*(1-normcdfAlpha)+...
+                (mu1+mu2).*tau.*normpdfAlpha)];
         end
     end
 end

@@ -1,11 +1,11 @@
 mop = testmop('kno1');
-mop.ngen=100;mop.npop = 300;mop.nnbr=10;
+mop.ngen=200;mop.npop = 300;mop.nnbr=10;
 mop = moeadde(mop);
 figure
 subplot 211
 plot(mop.PF(:,1),mop.PF(:,2),'x')
 subplot 212
-plot(mop.PF(:,1),mop.PF(:,2),'x')
+plot(mop.PS(:,1),mop.PS(:,2),'x')
 
 
 mop = testmop('sch2');
