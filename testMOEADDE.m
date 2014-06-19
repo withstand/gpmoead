@@ -1,3 +1,8 @@
+
+
+
+
+
 mop = testmop('kno1');
 mop.ngen=200;mop.npop = 300;mop.nnbr=10;
 mop = moeadde(mop);
@@ -16,20 +21,22 @@ plot(mop.PF(:,1),mop.PF(:,2),'x')
 
 
 
-mop = testmop('zdt1',10);
-mop.ngen=100;mop.npop = 300;mop.nnbr=10;
+mop = testmop('zdt1',2);
+mop.ngen=400;mop.npop = 300;mop.nnbr=10;
 mop = moeadde(mop);
 figure
 plot(mop.PF(:,1),mop.PF(:,2),'x')
 
+zdt1PF = mop.PF;
+save zdt1pf zdt1PF
 
-
-mop = testmop('zdt2',10);
-mop.ngen=100;mop.npop = 300;mop.nnbr=10;
+mop = testmop('zdt2',2);
+mop.ngen=400;mop.npop = 300;mop.nnbr=10;
 mop = moeadde(mop);
 figure
 plot(mop.PF(:,1),mop.PF(:,2),'x')
-
+zdt1PF = mop.PF;
+save zdt2pf zdt2PF
 
 mop = testmop('kno3');
 mop.ngen=100;mop.npop = 300;mop.nnbr=10;

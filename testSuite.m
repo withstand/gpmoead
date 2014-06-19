@@ -1,6 +1,6 @@
-mop = testmop('kno1');
+mop = testmop('zdt2',2);
 
-mop.ngen = 200;
+mop.ngen = 400;
 mop.npop = 300;
 mop.nnbr = 10;
 

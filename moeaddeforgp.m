@@ -123,7 +123,7 @@ for iGen = 1:mop.ngen
         n = perm(i);
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % parameter to control the evaluation %
-        realb = exp(-iGen / (mop.ngen/2));                          %
+        realb = 0.6; %exp(-iGen / (mop.ngen/2));                          %
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         if (rand < realb)
             type = 2;   % whole population
@@ -140,7 +140,7 @@ for iGen = 1:mop.ngen
                 pop(p(2),:), domain);
             %% apply polynomial mutation
             child = realmutaion(child, nvar,domain);
-%             if ~mop.isclose(child) && ...
+            %             if ~mop.isclose(child) && ...
             if isempty(constraintFunc) || constraintFunc(child)
                 break
             end
@@ -160,27 +160,40 @@ for iGen = 1:mop.ngen
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         sel = randperm(numel(P), nupdate);
         selected = P(sel);
+%         fitness_c = zeros(size(selected))';
         for si = selected
             fitness_c =evaluatefitness(fitnessStruct.name, ...
                 weightArray(si,:),val_c, std_c,...
                 fitnessStruct.idealObjective, fitnessStruct.gRef(si));
-            if fitness(si) < fitness_c  %maximize fitness
-                isStall = 0;
-                stallGeneration = 0;
-                pop(si,:) = child;
-                val(si,:) = val_c;
-                std(si,:) = std_c;
-                fitness(si) = fitness_c;
-            end
+                        if fitness(si) < fitness_c  %maximize fitness
+                            isStall = 0;
+                            stallGeneration = 0;
+                            pop(si,:) = child;
+                            val(si,:) = val_c;
+                            std(si,:) = std_c;
+                            fitness(si) = fitness_c;
+                        end
         end
+%         index = selected(fitness(selected) < fitness_c);
+%         indexSize = numel(index);
+%         if indexSize > 0
+%             isStall = 0;
+%             stallGeneration = 0;
+%             
+%             pop(index,:) = repmat(child, indexSize, 1);
+%             val(index,:) = repmat(val_c, indexSize, 1);
+%             std(index,:) = repmat(std_c, indexSize, 1);
+%             fitness(index) = fitness_c;
+%         end
+        
     end
     
     if isStall
         stallGeneration = stallGeneration + 1;
     end
     
-
-    fprintf('%6d\t%12.4f\t%12.4f\t%12.4f\t%12.4f\t%6d\n',...        
+    
+    fprintf('%6d\t%12.4f\t%12.4f\t%12.4f\t%12.4f\t%6d\n',...
         iGen, toc(ticIteration), max(fitness),min(fitness), ...
         mean(fitness), stallGeneration);
     
@@ -225,17 +238,17 @@ switch name
     case 'eite'
         objRet = te(ws, y_est, y_std, idealPoint);
         fit = ei(objRet, gRef);
-    case 'negte'        
-%         objRet = te(ws, y_est, y_std, idealPoint);
-%         fit = -objRet(:,1);         
-        fit = -max(ws .* (y_est - repmat(idealPoint, sampleSize, 1)),[],2); 
-    case 'wsei'    
+    case 'negte'
+        %         objRet = te(ws, y_est, y_std, idealPoint);
+        %         fit = -objRet(:,1);
+        fit = -max(ws .* (y_est - repmat(idealPoint, sampleSize, 1)),[],2);
+    case 'wsei'
         eiY = zeros(sampleSize, objDim);
         for i=1:objDim
             eiY(:,i) = ei([y_est(:,i) y_std(:,i)], idealPoint(i));
         end
-        fit = sum(ws .* eiY, 2);     
-        % eiY reference zero, no more expected improvement   
+        fit = sum(ws .* eiY, 2);
+        % eiY reference zero, no more expected improvement
     otherwise
 end
 end
@@ -244,7 +257,8 @@ end
 %%
 function eiRet = ei(objDistribution, gRef)
 u = (gRef - objDistribution(:,1)) ./ objDistribution(:,2);
-eiRet = (gRef -objDistribution(:,1)) .* normcdf(u) +...
+ncu = Phi(u);
+eiRet = (gRef -objDistribution(:,1)) .* ncu +...
     objDistribution(:,2) .* normpdf(u);
 end
 
@@ -286,7 +300,7 @@ end
             dist=[max(mu1, mu2) 0];
         else
             alpha = (mu1 - mu2) ./ tau;
-            normcdfAlpha = normcdf(alpha);
+            normcdfAlpha = Phi(alpha); %normcdf(alpha);
             normpdfAlpha = normpdf(alpha);
             dist = [mu1.*normcdfAlpha+mu2.*(1-normcdfAlpha)+...
                 tau.*normpdfAlpha  sqrt(...
