@@ -93,11 +93,12 @@ fitness = zeros(npop,1);
 % fprintf('Initialize problem in %f seconds.\n', toc(ticID));
 fprintf('%6s\t%12s\t%12s\t%12s\t%12s\n',...
     '   ', '    ', '   ','Fitness','    ');
-fprintf('%6s\t%12s\t%12s\t%12s\t%12s\n',...
-    'Iter', 'Time', 'max','min','mean');
-
+fprintf('%6s\t%12s\t%12s\t%12s\t%12s\t%12s\n',...
+    'Iter', 'Time', 'max','min','mean','Stall');
+stallGeneration = 0;
 for iGen = 1:mop.ngen
     ticIteration = tic;
+    isStall = 1;
     %% Update
     perm = randperm(npop);
     %
@@ -111,9 +112,9 @@ for iGen = 1:mop.ngen
         n = perm(i);
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % parameter to control the evaluation %
-        realb = 0.8;                          %
+        realb = 0.6;                          %
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        realb = 1 - exp(-iGen / (mop.ngen/10));  
+%         realb = 1 - exp(-iGen / (mop.ngen/10));  
         if (rand < realb)
             type = 1;  % neighbourhood
         else
@@ -145,7 +146,8 @@ for iGen = 1:mop.ngen
         % parameter to control the evaluation          %
         nupdate = min(nnbr,max(5, round(nnbr / 5)));   %
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        sel = randperm(numel(P), nupdate);
+        randpermP = randperm(numel(P));
+        sel = randpermP(1:nupdate);
         selected = P(sel);
         for si = selected
             fitness_c =evaluatefitness(weightArray(si,:),val_c, vr);
@@ -153,11 +155,19 @@ for iGen = 1:mop.ngen
                 pop(si,:) = child;
                 val(si,:) = val_c;
                 fitness(si) = fitness_c;
+                isStall = 0;
             end
         end
+    end   % loop through population
+    
+    if isStall
+        stallGeneration = stallGeneration + 1;
+    else
+        stallGeneration = 0;
     end
-    fprintf('%6d\t%12.4f\t%12.4f\t%12.4f\t%12.4f\n',...
-        iGen, toc(ticIteration), max(fitness),min(fitness), mean(fitness));
+    fprintf('%6d\t%12.4f\t%12.4f\t%12.4f\t%12.4f%12d\n',...
+        iGen, toc(ticIteration), max(fitness),min(fitness),...
+        mean(fitness), stallGeneration);
 end
 mopRet.npop = npop; % could be changed by the weightArray design
 mopRet.pop = pop;
@@ -259,87 +269,87 @@ end
 
 
 
-function [p,P] = matingselection(npop, nbr, size,type)
-%% Randomly select size individuals amone neighbour of n or the whole population
-% Output
-%   p   -   size * 1
-% Input
-%   nbr -   neighbours
-%   npop-   popsize
-%   size-   select size individuals
-%   type-   selection type
-%               1 among neighbours
-%               2 among the whole population
-
-
-if type == 1   %neighbourhood
-    assert(size <= numel(nbr), ...
-        'Can not select %d individuals in %d neighbours.', size, numel(nbr));
-    pc = randperm(numel(nbr));
-    p = nbr(pc(1:size))';
-    P = nbr;
-else
-    pc = randperm(npop);
-    p = pc(1:size)';
-    P = 1:npop;
-end
-
-end
-
-
-function child = diffevoxover2(zero,one,two, domain)
-%% Produce a child with 3 individuals
-% Input
-%   zero, one, two  -   1 * nvar
-%   domain          -   lx, ux,  2 * nvar
-% Output
-%   child           -   new child
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% parameter to control the evaluation %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-rate = 0.5;
-
-child = zero + rate * (two - one);
-idx = child < domain(1,:);
-remidy = domain(1,:) + rand * (zero - domain(1,:));
-child(idx) = remidy(idx);
-idx = child > domain(2,:);
-remidy = domain(2,:) - rand * (domain(2,:) - zero);
-child(idx) = remidy(idx);
-
-end
-
-function ind = realmutaion(x, nvar,domain)
-rate = 1.0 / nvar;
-
-etam = 20;
-
-rnvar = rand(1,nvar);
-rnd = rand(1,nvar);
-mut_idx = rnvar < rate;
-left_idx = rnd <= 0.5;
-right_idx = rnd > 0.5;
-
-lm_idx = mut_idx & left_idx;
-rm_idx = mut_idx & right_idx;
-% yl = zeros(size(x));
-% yu = ones(size(x));
-yl = domain(1,:);
-yu = domain(2,:);
-
-d1 = (x - yl) ./ (yu-yl);
-d2 = (yu - x) ./ (yu-yl);
-mut_pow = 1/(etam + 1);
-
-x1 = x + (yu-yl) .* ((2*rnd+ (1-2*rnd).* (1-d1).^(etam+1)  ) .^ mut_pow - 1);
-x2 = x + (yu-yl) .* (1 - (2*(1-rnd) + 2*(rnd-0.5) .* (1-d2) .^(etam+1)) .^ mut_pow);
-
-ind = x;
-ind(lm_idx) = x1(lm_idx);
-ind(rm_idx) = x2(rm_idx);
-
-ind(ind<yl)=yl(ind<yl);
-ind(ind>yu)=yu(ind>yu);
-end
+% function [p,P] = matingselection(npop, nbr, size,type)
+% %% Randomly select size individuals amone neighbour of n or the whole population
+% % Output
+% %   p   -   size * 1
+% % Input
+% %   nbr -   neighbours
+% %   npop-   popsize
+% %   size-   select size individuals
+% %   type-   selection type
+% %               1 among neighbours
+% %               2 among the whole population
+% 
+% 
+% if type == 1   %neighbourhood
+%     assert(size <= numel(nbr), ...
+%         'Can not select %d individuals in %d neighbours.', size, numel(nbr));
+%     pc = randperm(numel(nbr));
+%     p = nbr(pc(1:size))';
+%     P = nbr;
+% else
+%     pc = randperm(npop);
+%     p = pc(1:size)';
+%     P = 1:npop;
+% end
+% 
+% end
+% 
+% 
+% function child = diffevoxover2(zero,one,two, domain)
+% %% Produce a child with 3 individuals
+% % Input
+% %   zero, one, two  -   1 * nvar
+% %   domain          -   lx, ux,  2 * nvar
+% % Output
+% %   child           -   new child
+% 
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% % parameter to control the evaluation %
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% rate = 0.5;
+% 
+% child = zero + rate * (two - one);
+% idx = child < domain(1,:);
+% remidy = domain(1,:) + rand * (zero - domain(1,:));
+% child(idx) = remidy(idx);
+% idx = child > domain(2,:);
+% remidy = domain(2,:) - rand * (domain(2,:) - zero);
+% child(idx) = remidy(idx);
+% 
+% end
+% 
+% function ind = realmutaion(x, nvar,domain)
+% rate = 1.0 / nvar;
+% 
+% etam = 20;
+% 
+% rnvar = rand(1,nvar);
+% rnd = rand(1,nvar);
+% mut_idx = rnvar < rate;
+% left_idx = rnd <= 0.5;
+% right_idx = rnd > 0.5;
+% 
+% lm_idx = mut_idx & left_idx;
+% rm_idx = mut_idx & right_idx;
+% % yl = zeros(size(x));
+% % yu = ones(size(x));
+% yl = domain(1,:);
+% yu = domain(2,:);
+% 
+% d1 = (x - yl) ./ (yu-yl);
+% d2 = (yu - x) ./ (yu-yl);
+% mut_pow = 1/(etam + 1);
+% 
+% x1 = x + (yu-yl) .* ((2*rnd+ (1-2*rnd).* (1-d1).^(etam+1)  ) .^ mut_pow - 1);
+% x2 = x + (yu-yl) .* (1 - (2*(1-rnd) + 2*(rnd-0.5) .* (1-d2) .^(etam+1)) .^ mut_pow);
+% 
+% ind = x;
+% ind(lm_idx) = x1(lm_idx);
+% ind(rm_idx) = x2(rm_idx);
+% 
+% ind(ind<yl)=yl(ind<yl);
+% ind(ind>yu)=yu(ind>yu);
+% end

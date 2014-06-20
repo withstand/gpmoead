@@ -1,4 +1,7 @@
-function cgp = clusteredgptrain(data, y, clusteringOpts, gpOpts)
+function cgp = clusteredgptrain(data, y, clusteringOpts, gpOpts, oldCgp)
+if nargin<5
+    oldCgp = [];
+end
 if nargin<4
     gpOpts = [];
 end
@@ -41,7 +44,18 @@ end
 for i = 1:clusteringSize
     idxi = cgp.idx(i,:);
     tic;
-    cgp.models{i} = gptrain(data(idxi,:),y(idxi), cgp.gpOpts);
+    if isempty(oldCgp)
+        cgp.models{i} = gptrain(data(idxi,:),y(idxi), cgp.gpOpts);
+    else
+        if i > numel(oldCgp.models)
+             cgp.models{i} = gptrain(data(idxi,:),y(idxi),...
+                amendstruct(gpOpts,...
+                struct('algorithm','de')));           
+        else            
+            cgp.models{i} = gptrain(data(idxi,:),y(idxi),...
+                amendstruct(oldCgp.models{i}.gpOpts, gpOpts));
+        end
+    end
     fprintf('Building model %d, time used %f.\n', i, toc);
 end
 
@@ -73,20 +87,30 @@ cgp.func = @func;
         
         yStar = zeros(m,2);
         
-        for ii=1:m  % m points to estimate
+        parClusteringSize = cgp.clusteringOpts.clusteringSize;
+        parCenter = getfieldwithdefault(cgp,'centers',[]);
+        closest = zeros(m,1);
+       for ii=1:m  % m points to estimate
             % find the nearest centers to test
-            if cgp.clusteringOpts.clusteringSize > 1
-                d = cgp.centers - repmat(xStar(ii,:), cgp.clusteringOpts.clusteringSize,1);
+            if  parClusteringSize > 1
+                d = parCenter - repmat(xStar(ii,:), parClusteringSize,1);
                 d = diag(d * d');
-                closest = find(d == min(d));
+                closestArray = find(d == min(d));
                 % In case there are more cloest center points, just pick the first one.
-                closest = closest(1);
+                closest(ii) = closestArray(1);
             else
-                closest = 1;
+                closest(ii) = 1;
             end
-            % gpt = gp_predict(cgp.models{closest}, xStar(ii,:));
-            yStar(ii,:) = cgp.models{closest}.gp_func(xStar(ii,:));
-        end
+            
+            yStar(ii,:) = cgp.models{closest(ii)}.gp_func(xStar(ii,:));
+
+       end
+%        
+% %        parModels = [cgp.models{closest}];
+% 
+%        for ii = 1:m
+%             % gpt = gp_predict(cgp.models{closest}, xStar(ii,:));
+%         end
         
     end
 end

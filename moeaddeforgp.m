@@ -26,7 +26,8 @@ func = mop.func;
 fitnessStruct = getfieldwithdefault(mop,'fitnessStruct',[]);
 constraintFunc = getfieldwithdefault(mop,'constraint',[]);
 nbrs = getfieldwithdefault(mop,'nbrs',[]);
-pop = getfieldwithdefault(mop,'pop',[]);
+%
+% pop = getfieldwithdefault(mop,'pop',[]);
 weightArray = getfieldwithdefault(mop, 'weightArray',[]);
 val = getfieldwithdefault(mop,'val',[]);
 std = getfieldwithdefault(mop,'std',[]);
@@ -60,11 +61,11 @@ end
 
 
 %   3) pop:         initial population
-if isempty(pop)
-    %     pop01 = lhsdesign(npop, nvar);
-    pop01 = rand(npop, nvar);
-    pop = pop01 .* repmat(S, npop,1) + repmat(L, npop,1);
-end
+% if isempty(pop)
+%     pop01 = lhsdesign(npop, nvar);
+pop01 = rand(npop, nvar);
+pop = pop01 .* repmat(S, npop,1) + repmat(L, npop,1);
+% end
 % regenerate pop for it
 if ~isempty(constraintFunc)
     for iPop = 1:npop
@@ -156,35 +157,36 @@ for iGen = 1:mop.ngen
         
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % parameter to control the evaluation          %
-        nupdate = min(nnbr,max(4, round(nnbr / 5)));   %
+        nupdate = min(nnbr,max(6, round(nnbr / 5)));   %
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        sel = randperm(numel(P), nupdate);
+        randpermP = randperm(numel(P));
+        sel = randpermP(1:nupdate);
         selected = P(sel);
-%         fitness_c = zeros(size(selected))';
+        %         fitness_c = zeros(size(selected))';
         for si = selected
             fitness_c =evaluatefitness(fitnessStruct.name, ...
                 weightArray(si,:),val_c, std_c,...
                 fitnessStruct.idealObjective, fitnessStruct.gRef(si));
-                        if fitness(si) < fitness_c  %maximize fitness
-                            isStall = 0;
-                            stallGeneration = 0;
-                            pop(si,:) = child;
-                            val(si,:) = val_c;
-                            std(si,:) = std_c;
-                            fitness(si) = fitness_c;
-                        end
+            if fitness(si) < fitness_c  %maximize fitness
+                isStall = 0;
+                stallGeneration = 0;
+                pop(si,:) = child;
+                val(si,:) = val_c;
+                std(si,:) = std_c;
+                fitness(si) = fitness_c;
+            end
         end
-%         index = selected(fitness(selected) < fitness_c);
-%         indexSize = numel(index);
-%         if indexSize > 0
-%             isStall = 0;
-%             stallGeneration = 0;
-%             
-%             pop(index,:) = repmat(child, indexSize, 1);
-%             val(index,:) = repmat(val_c, indexSize, 1);
-%             std(index,:) = repmat(std_c, indexSize, 1);
-%             fitness(index) = fitness_c;
-%         end
+        %         index = selected(fitness(selected) < fitness_c);
+        %         indexSize = numel(index);
+        %         if indexSize > 0
+        %             isStall = 0;
+        %             stallGeneration = 0;
+        %
+        %             pop(index,:) = repmat(child, indexSize, 1);
+        %             val(index,:) = repmat(val_c, indexSize, 1);
+        %             std(index,:) = repmat(std_c, indexSize, 1);
+        %             fitness(index) = fitness_c;
+        %         end
         
     end
     
@@ -314,87 +316,8 @@ end
 
 
 
-function [p,P] = matingselection(npop, nbr, size,type)
-%% Randomly select size individuals amone neighbour of n or the whole population
-% Output
-%   p   -   size * 1
-% Input
-%   nbr -   neighbours
-%   npop-   popsize
-%   size-   select size individuals
-%   type-   selection type
-%               1 among neighbours
-%               2 among the whole population
 
 
-if type == 1   %neighbourhood
-    assert(size <= numel(nbr), ...
-        'Can not select %d individuals in %d neighbours.', size, numel(nbr));
-    pc = randperm(numel(nbr));
-    p = nbr(pc(1:size))';
-    P = nbr;
-else
-    pc = randperm(npop);
-    p = pc(1:size)';
-    P = 1:npop;
-end
-
-end
 
 
-function child = diffevoxover2(zero,one,two, domain)
-%% Produce a child with 3 individuals
-% Input
-%   zero, one, two  -   1 * nvar
-%   domain          -   lx, ux,  2 * nvar
-% Output
-%   child           -   new child
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% parameter to control the evaluation %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-rate = 0.5;
-
-child = zero + rate * (two - one);
-idx = child < domain(1,:);
-remidy = domain(1,:) + rand * (zero - domain(1,:));
-child(idx) = remidy(idx);
-idx = child > domain(2,:);
-remidy = domain(2,:) - rand * (domain(2,:) - zero);
-child(idx) = remidy(idx);
-
-end
-
-function ind = realmutaion(x, nvar,domain)
-rate = 1.0 / nvar;
-
-etam = 20;
-
-rnvar = rand(1,nvar);
-rnd = rand(1,nvar);
-mut_idx = rnvar < rate;
-left_idx = rnd <= 0.5;
-right_idx = rnd > 0.5;
-
-lm_idx = mut_idx & left_idx;
-rm_idx = mut_idx & right_idx;
-% yl = zeros(size(x));
-% yu = ones(size(x));
-yl = domain(1,:);
-yu = domain(2,:);
-
-d1 = (x - yl) ./ (yu-yl);
-d2 = (yu - x) ./ (yu-yl);
-mut_pow = 1/(etam + 1);
-
-x1 = x + (yu-yl) .* ((2*rnd+ (1-2*rnd).* (1-d1).^(etam+1)  ) .^ mut_pow - 1);
-x2 = x + (yu-yl) .* (1 - (2*(1-rnd) + 2*(rnd-0.5) .* (1-d2) .^(etam+1)) .^ mut_pow);
-
-ind = x;
-ind(lm_idx) = x1(lm_idx);
-ind(rm_idx) = x2(rm_idx);
-
-ind(ind<yl)=yl(ind<yl);
-ind(ind>yu)=yu(ind>yu);
-end

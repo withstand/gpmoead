@@ -8,14 +8,18 @@ Delta = getfieldwithdefault(gp_opts, 'Delta', 0);
 lhp = getfieldwithdefault(gp_opts,'lhp',[-6*ones(1,dimension) ones(1,dimension)]);
 uhp = getfieldwithdefault(gp_opts,'uhp',[6*ones(1,dimension) 2*ones(1,dimension)]);
 
-hp0 = getfieldwithdefault(gp_opts,'hp0',[zeros(1,dimension) 2*ones(1,dimension)]);
+hp0 = getfieldwithdefault(gp_opts,'hp0',...
+    [log10(getfieldwithdefault(gp_opts,'theta', ones(1,dimension))), ...
+    getfieldwithdefault(gp_opts,'p', 2*ones(1,dimension))]);
+%     [ ]);
 
 if sum(Delta)~= 0  %noisy
     %     2 * dimension + 1
     s2 = std(y) * std(y);
     lsigma2 =  getfieldwithdefault(gp_opts,'lsigma2', 1e-5*s2);
     usigma2 = getfieldwithdefault(gp_opts,'lsigma2', 1e5*s2);
-    sigma20 = getfieldwithdefault(gp_opts,'lsigma20', s2);
+    sigma20 = getfieldwithdefault(gp_opts,'lsigma20', ...
+        getfieldwithdefault(gp_opts,'sigma2',s2));
     lhp = [lsigma2 lhp];
     uhp = [usigma2 uhp];
     hp0 = [sigma20 hp0];
@@ -53,7 +57,7 @@ elseif strcmp(algorithm,'pd-local')
 elseif strcmp(algorithm,'de-pd')
     hp = optimizer_de(40,50);
     [hp,min_nlml] = fmincon(@nlml_pd,hp,[],[],[],[], lhp,uhp, ...
-        [],optimset('Display',strDisplay,'Algorithm','interior-point', ...
+        [],optimset('Display',strDisplay,...'Algorithm','interior-point', ...
         'GradObj','on'));
     
 elseif strcmp(algorithm,'multi-start')
@@ -186,7 +190,7 @@ gp.gp_func = @gp_evaluate;
             gp.corr = @expCorr;
             return;
         end
-        narginchk(3,3);
+%         narginchk(3,3);
         
         % get default correlation function, or use provided correlation function
         corrFunc = getfieldwithdefault(gpOpts,'corr',@expCorr);

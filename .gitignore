@@ -3,3 +3,5 @@
 *.dat
 *.mat
 *.mexa64
+*.mexw64
+*.asv

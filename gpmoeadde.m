@@ -1,6 +1,6 @@
 function mopForMoeadde = gpmoeadde(mop)
 %% Gaussian Process Model based MOEA/D-DE
-xThreshold = 1e-2;
+xThreshold = 1e-3;
 
 %% handle the structure of mop
 ticID = tic;
@@ -91,14 +91,15 @@ end
 
 %% Stop criteria
 
-mopForMoeadde.isclose = @isclose;
+% mopForMoeadde.isclose = @isclose;
 
 mopForMoeadde.weightArray = weightArray;
-
-
-
 mopForMoeadde.nbrs = nbrs;
 mopForMoeadde.fitness = inf;
+
+isFirstBuild = 1;
+cgp = cell(1,nobj);
+funcs = cell(1, nobj);
 % fprintf('%10s\t%15s\t%15s\t%15s\t%15s\n',...
 %     'Iter', 'Time', 'Evaluated','Candidate','max fitness');
 % while max(mopForMoeadde.fitness) > 0.1
@@ -110,93 +111,130 @@ for iGeneration = 1:1000
     
     eeID = tic;
     % buildCGPmodel
-    cgp = cell(1,nobj);
-    funcs = cell(1, nobj);
-    for iObj = 1:nobj
-        cgp{iObj} = clusteredgptrain(evaluatedDesignArray, ...
-            evaluatedObjective(:,iObj));
-        funcs{iObj} = cgp{iObj}.gp_func;
+    disp('Building meta-model.....');
+    if isFirstBuild
+        for iObj = 1:nobj
+            cgp{iObj} = clusteredgptrain(evaluatedDesignArray, ...
+                evaluatedObjective(:,iObj),[],...
+                struct('algorithm','de','refresh',0));
+            funcs{iObj} = cgp{iObj}.gp_func;
+        end
+        isFirstBuild = 0;
+    else
+        for iObj = 1:nobj
+            cgp{iObj} = clusteredgptrain(evaluatedDesignArray, ...
+                evaluatedObjective(:,iObj),[],...
+                struct('algorithm','pd','refresh',0), cgp{iObj});
+            funcs{iObj} = cgp{iObj}.gp_func;
+        end
     end
     % buildsurrogatedmop
     
-%     mopForMoeadde.fitnessStruct.name = 'negte';
-            mopForMoeadde.fitnessStruct.name = 'eite';
-%             mopForMoeadde.fitnessStruct.name = 'wsei';
-    disp(['Call MOEA/D-DE with fitness:' mopForMoeadde.fitnessStruct.name]);
+    mopForMoeadde.fitnessStruct.name = 'negte';
+    %     mopForMoeadde.fitnessStruct.name = 'eite';
+    %             mopForMoeadde.fitnessStruct.name = 'wsei';
     mopForMoeadde.pop = [];
     mopForMoeadde.func = mofunction(funcs);
+    %     mopForMoeadde.evaluated = evaluatedDesignArray;
+    %     mopForMoeadde.evaluatedObjective = evaluatedObjective;
+    
+%     showmop(newfigure2ax,mopForMoeadde);
+    
+    %     pause
+    
+    %     comparetwomop(mop, mopForMoeadde,evaluatedDesignArray);
     %     mopForMoeadde.fitnessStruct.yRef = evaluatedObjective;
-    idealObjective = min(evaluatedObjective,[], 1);
-    gRef = zeros(npop,1);
-    for iPop = 1:npop
-        evaluatedSize = size(evaluatedObjective,1);
-        gRef(iPop) = min(max(repmat(weightArray(iPop,:),evaluatedSize ,1) .* ...
-            (evaluatedObjective - repmat(idealObjective, evaluatedSize,1)),...
-            [],2));
-    end
-    mopForMoeadde.fitnessStruct.idealObjective = idealObjective;
-    mopForMoeadde.fitnessStruct.gRef = gRef;
+%     idealObjective = min(evaluatedObjective,[], 1);
+%     gRef = zeros(npop,1);
+%     for iPop = 1:npop
+%         evaluatedSize = size(evaluatedObjective,1);
+%         gRef(iPop) = min(max(repmat(weightArray(iPop,:),evaluatedSize ,1) .* ...
+%             (evaluatedObjective - repmat(idealObjective, evaluatedSize,1)),...
+%             [],2));
+%     end
+%     mopForMoeadde.fitnessStruct.idealObjective = idealObjective;
+%     mopForMoeadde.fitnessStruct.gRef = gRef;
     
     
     %% iterat moeadde
+    disp(['Call MOEA/D-DE with fitness:' mopForMoeadde.fitnessStruct.name]);
     
     % init population if needed
     % evaluated popution if needed
-    mopForMoeadde = moeaddeforgp(mopForMoeadde);
+    %     mopFake = moeadde(mopForMoeadde);
+    %     mopForMoeadde = moeaddeforgp(mopForMoeadde);
+    mopForMoeadde = moeadde(mopForMoeadde);
+    
     % locate candidates
     
-    [candidateArray, candidateFitness] = selectCandidate(mopForMoeadde.pop, ...
-        5,...%         mopForMoeadde.npop,...%10,...
-        mopForMoeadde.fitness);
+    candidateArray = selectCandidate(mopForMoeadde, 10, evaluatedDesignArray, xThreshold);
+    %,...%         mopForMoeadde.npop,...%10,...
+    %         mopForMoeadde.fitness);
     % evaluate and added to evaluatedSet
     candidateObjective = func(candidateArray);
-    [candidateObjectiveEst, candidateStdEst] = mopForMoeadde.func(...
-        candidateArray);
+    %     [candidateObjectiveEst, candidateStdEst] = mopForMoeadde.func(...
+    %         candidateArray);
     
-    if size(candidateArray,1)>0
-        titleStr = ['evaluated=' num2str(size(evaluatedDesignArray,1)),...
-            '; candidate=', num2str(size(candidateArray,1))];
-        figure(1)
-        clf
-%         plot(evaluatedObjective(:,1), evaluatedObjective(:,2),'gx', ...
-%             candidateObjective(:,1), candidateObjective(:,2),'ro',...
-
-        idealObjective = min([evaluatedObjective; candidateObjective],[], 1);
-
-        plot(idealObjective(1), idealObjective(2),'ks','MarkerSize',10)
-        [PF,~] = findparetosolution([evaluatedObjective; candidateObjective],...
-            [evaluatedDesignArray; candidateArray]);
-        
-
-        
-        if exist([lower(mop.name), 'pf.mat'],'file')
-            ret = [];
-            name = lower(mop.name);
-            commandStr = ['ret = load(''', name, 'pf'');'];
-            %         load kno1pf
-            eval(commandStr);        
-
-            commandStr = ['plot(ret.',...
-                name, 'PF(:,1), ret.',...
-                name, 'PF(:,2),''rv'',''LineWidth'',2,''MarkerSize'',2);'];
-            hold on
-            eval(commandStr);
-            hold off
-        end
-
-        
-        hold on
-        PF = sortrows(PF);
-        plot(PF(:,1),PF(:,2),'k*','MarkerSize',12);        
-        hold off
-        
-        title(titleStr);
-        %         figure(2)
-        %         plot(evaluatedDesignArray(:,1), evaluatedDesignArray(:,2),'gx',...
-        %             candidateArray(:,1), candidateArray(:,2), 'ro','MarkerSize',10);
-        %         title(titleStr);
-        drawnow
-    end
+    %     if size(candidateArray,1)>0
+    %         titleStr = ['evaluated=' num2str(size(evaluatedDesignArray,1)),...
+    %             '; candidate=', num2str(size(candidateArray,1))];
+    %         figure(1)
+    %         clf
+    %         plot(candidateObjective(:,1), candidateObjective(:,2),'rp',...
+    %             'MarkerSize',15);
+    %
+    %         idealObjective = min([evaluatedObjective; candidateObjective],[], 1);
+    %         hold on;
+    %         plot(idealObjective(1), idealObjective(2),'ks','MarkerSize',10)
+    %         hold off
+    %
+    %
+    % %         [PF,~] = findparetosolution([evaluatedObjective; candidateObjective],...
+    % %             [evaluatedDesignArray; candidateArray]);
+    %
+    %
+    %
+    %         if exist([lower(mop.name), 'pf.mat'],'file')
+    %             ret = [];
+    %             name = lower(mop.name);
+    %             commandStr = ['ret = load(''', name, 'pf'');'];
+    %             %         load kno1pf
+    %             eval(commandStr);
+    %
+    %             commandStr = ['plot(ret.',...
+    %                 name, 'PF(:,1), ret.',...
+    %                 name, 'PF(:,2),''rv'',''LineWidth'',2,''MarkerSize'',2);'];
+    %             hold on
+    %             eval(commandStr);
+    %             hold off
+    %         end
+    %
+    %
+    % %         hold on
+    % %         PF = sortrows(PF);
+    % %         plot(PF(:,1),PF(:,2),'k*','MarkerSize',12);
+    % %         hold off
+    %
+    %         %         figure(2)
+    %         %         plot(evaluatedDesignArray(:,1), evaluatedDesignArray(:,2),'gx',...
+    %         %             candidateArray(:,1), candidateArray(:,2), 'ro','MarkerSize',10);
+    %         %         title(titleStr);
+    %
+    %         hold on
+    %         trueValueOfPs = mop.func(mopForMoeadde.PS);
+    %         plot(mopForMoeadde.PF(:,1),mopForMoeadde.PF(:,2),'go',...
+    %             trueValueOfPs(:,1), trueValueOfPs(:,2), 'g+')
+    %         hold off
+    %
+    % %         hold on
+    % %         trueValueOfPs = mop.func(mopFake.PS);
+    % %         plot(mopFake.PF(:,1),mopFake.PF(:,2),'co',...
+    % %             trueValueOfPs(:,1), trueValueOfPs(:,2), 'c+')
+    % %         hold off
+    %         title(titleStr);
+    %
+    %         drawnow
+    %     end
     
     
     
@@ -209,12 +247,12 @@ for iGeneration = 1:1000
     fprintf('-----------------------------------------------------------------------------\n');
     fprintf('%10s\t%15s\t%15s\t%15s\t%15s\n',...
         'Iter', 'Time', 'Evaluated','Candidate','max fitness');
-    fprintf('%10d\t%15.4f\t%15.4f\t%15.4f\t%15.4f\n',...
+    fprintf('%10d\t%15.4f\t%15.4f\t%15d\t%15.4f\n',...
         iGeneration, toc(eeID), size(evaluatedDesignArray,1),...
         size(candidateArray,1), max(mopForMoeadde.fitness));
     
-    disp([candidateArray   candidateObjective candidateObjectiveEst ...
-        candidateStdEst candidateFitness]);
+    %     disp([candidateArray   candidateObjective candidateObjectiveEst ...
+    %         candidateStdEst candidateFitness]);
     
     %     fprintf('Iteration of exploration and exploit, time %d, allocated candidates:%d.\n',...
     %         toc(eeID), size(candidateArray,1));
@@ -224,6 +262,8 @@ for iGeneration = 1:1000
     %
     
 end
+
+
 [PF,PS] = findparetosolution(evaluatedObjective,...
     evaluatedDesignArray);
 mopForMoeadde.PF = PF;
@@ -235,69 +275,16 @@ mopForMoeadde.time = toc(ticID);
 
 
 
-    function [candidate, cf] = selectCandidate(mopPop,...
-            candidateSize, fitnessArray)
-        
-        candidate = [];
-        cf = [];
-        n = size(mopPop,1);
-        
-        pd = pdist2(mopPop, [mopPop; evaluatedDesignArray]);
-        for i=1:n
-            pd(i,i) = inf;
-        end
-        distance = min(pd,[],2);
-        
-        %% sort strategy
-        [~, index] = sort(fitnessArray,1,'descend');
-        
-        %% max distance strategy
-        %         [~, index] = sort(distance,1, 'descend');
-        
-        %% random strategy
-        %         index = randperm(n);
-        for i = 1:n
-            sel = index(i);
-            %             dist1 = pdist2(mopPop(i,:), evaluatedDesignArray);
-            %             if isempty(candidate)
-            %                 dist2 = inf;
-            %             else
-            %                 dist2 = pdist2(mopPop(i,:), candidate);
-            %             end
-            %             if min(dist2) > closeThreshold
-            if distance(sel) > xThreshold
-                candidate = [candidate; mopPop(sel,:)];
-                cf = [cf; fitnessArray(sel)];
-            end
-            %             end
-            if size(candidate,1) >= candidateSize
-                return;
-            end
-        end
-    end
 
 
 
-    function [close, closestDistance] = isclose(designPoint)
-        closestDistance = min(pdist2(designPoint, evaluatedDesignArray, 'euclidean'));
-        close = closestDistance <= closeThreshold;
-    end
+%     function [close, closestDistance] = isclose(designPoint)
+%         closestDistance = min(pdist2(designPoint, evaluatedDesignArray, 'euclidean'));
+%         close = closestDistance <= closeThreshold;
+%     end
 
 
-    function [pf, ps] = findparetosolution(val,pop)
-        pf = [];
-        ps = [];
-        
-        nval = size(val,1);
-        for iPf=1:nval
-            do = val([1:iPf-1 iPf+1:nval],:)-...
-                repmat(val(iPf,:), nval-1,1)>=-1e-3;
-            if sum(sum(do,2)==0) == 0
-                pf = [pf; val(iPf,:)];
-                ps = [ps; pop(iPf,:)];
-            end
-        end
-    end
 
-end
+
+% end
 
