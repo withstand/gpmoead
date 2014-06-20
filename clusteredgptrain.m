@@ -1,96 +1,130 @@
-function cgp = clusteredgptrain(data, y, clusteringOpts, gpOpts, oldCgp)
-if nargin<5
+function clusteredGPModel = clusteredgptrain(data, y, oldCgp)
+% Train a clustered Gaussian Process model with multi-dimensional data-output
+%
+%   cgp = clusteredgptrain(data, y, oldCgp)
+%   Input:
+%       data:   design points, n * nvar
+%       y:      objective values, n * nobj
+%       oldCgp: old cgp, used to transfer options or update an old model
+%               with new data
+%   Output:
+%       cgp:    trained model
+%
+if nargin < 3 % all options set to default, using de alogrithm to start
     oldCgp = [];
 end
-if nargin<4
-    gpOpts = [];
-end
-if nargin < 3
-    clusteringOpts = [];
-end
-
+% if nargin<4
+%     gpOpts = [];
+% end
+% if nargin < 3
+%     clusteringOpts = [];
+% end
+clusteredGPModel = oldCgp;
 
 %% data properties
-[sampleSize, ~] = size(data);
-assert(sampleSize==numel(y));
+[nx, nvar] = size(data);
+[ny, nobj] = size(y);
+assert(nx == ny);
+n = nx;
+
+
 
 %% clustering options
-L1 = getfieldwithdefault(clusteringOpts,'L1',80);
-L2 = getfieldwithdefault(clusteringOpts,'L2',20);
-cgp.clusteringOpts.L1 = L1;
-cgp.clusteringOpts.L2 = L2;
-if sampleSize <= L1
+L1 = getfieldwithdefault(clusteredGPModel,'L1',80);
+L2 = getfieldwithdefault(clusteredGPModel,'L2',20);
+if n <= L1
     clusteringSize = 1;
 else
-    clusteringSize = 1 + ceil((sampleSize-L1)/L2);
+    clusteringSize = 1 + ceil((n-L1)/L2);
 end
 % clusteringSize = max(clusteringSize, 1);
-cgp.clusteringOpts.clusteringSize = clusteringSize;
+% build a cgm for each objective
 
-%% gp parameters
-cgp.gpOpts = gpOpts;
-
+cgpm = cell(1, nobj);
 %% Build Clustering
-cgp.models = cell(clusteringSize,1);
-if clusteringSize > 1
-    [centers,U,~] = fcm(data,clusteringSize,[2.0,100,1e-5,0]);
-    % obtain the indexs show the relation to different cluster
-    [~,idx] = sort(U,2,'descend');
-    cgp.centers = centers;
-    cgp.idx = idx(:,1:L1);
-else
-    cgp.idx = 1:sampleSize;
-end
-for i = 1:clusteringSize
-    idxi = cgp.idx(i,:);
-    tic;
-    if isempty(oldCgp)
-        cgp.models{i} = gptrain(data(idxi,:),y(idxi), cgp.gpOpts);
+fprintf('Building C-fuzzy clustered Gaussian Process models.\n');
+fprintf('%10s\t%10s\t%10s\n',...
+    'Objective', 'Model No.', 'Time(s)');
+for iObj = 1:nobj
+    currentCGPM.models = cell(1,clusteringSize);
+    if clusteringSize > 1
+        [centers,U,~] = fcm(data,clusteringSize,[2.0,100,1e-5,0]);
+        % obtain the indexs show the relation to different cluster
+        [~,idx] = sort(U,2,'descend');
+        currentCGPM.centers = centers;
+        currentCGPM.idx = idx(:,1:L1);
     else
-        if i > numel(oldCgp.models)
-             cgp.models{i} = gptrain(data(idxi,:),y(idxi),...
-                amendstruct(gpOpts,...
-                struct('algorithm','de')));           
-        else            
-            cgp.models{i} = gptrain(data(idxi,:),y(idxi),...
-                amendstruct(oldCgp.models{i}.gpOpts, gpOpts));
+        currentCGPM.idx = 1:n;
+    end
+    
+    for i = 1:clusteringSize
+        idxi = currentCGPM.idx(i,:);
+        tic;
+        if isempty(oldCgp) || ...
+                 isempty(getfieldwithdefault(oldCgp,'cgpm',[])) || ...
+                 numel(oldCgp.cgpm) ~= nobj || ...
+                 isempty(getfieldwithdefault(oldCgp.cgpm{iObj},'models',[])) || ...
+                 numel(oldCgp.cgpm{iObj}.models) < i
+            currentCGPM.models{i} = gptrain(data(idxi,:),y(idxi, iObj),...
+                amendstruct(clusteredGPModel,...
+                struct('algorithm','de')));
+        else
+            currentCGPM.models{i} = gptrain(data(idxi,:),y(idxi, iObj),...
+                amendstruct(clusteredGPModel.cgpm{iObj}.models{i}, ...
+                struct('algorithm','pd')));
+        end
+%         fprintf('Building model %d, time used %f.\n', i, toc);
+        fprintf('%10d\t%10d\t%10.2f\n',...
+             iObj, i,  toc);
+    end
+    cgpm{iObj} = currentCGPM;
+end  % iObj for each objective
+
+clusteredGPModel.cgpm = cgpm;
+clusteredGPModel.data = data;
+clusteredGPModel.y = y;
+clusteredGPModel.clusteringSize = clusteringSize;
+clusteredGPModel.L1 = L1;
+clusteredGPModel.L2 = L2;
+clusteredGPModel.datai = @getcluster;
+clusteredGPModel.yi = @gety;
+clusteredGPModel.func = @func;
+clusteredGPModel.nobj = nobj;
+clusteredGPModel.nvar = nvar;
+clusteredGPModel.domain = getfieldwithdefault(clusteredGPModel,...
+    'domain', [min(data); max(data)]);
+
+    function yi = gety(ci)
+        ci_index  = clusteredGPModel.cgpm{1}.idx(ci,:);
+        yi = clusteredGPModel.y(ci_index,:);
+    end
+
+
+    function datai = getcluster(ci)
+        ci_index  = clusteredGPModel.cgpm{1}.idx(ci,1:clusteredGPModel.L1);
+        datai = clusteredGPModel.data(ci_index,:);
+    end
+
+    function [hatY, hatStd] = func(xStar)
+        n = size(xStar,1);
+        hatY = zeros(n, nobj);
+        hatStd = zeros(n, nobj);
+        for iobj = 1:nobj
+            yStar = clusteredGPEst(clusteredGPModel.cgpm{iobj}, xStar);
+            hatY(:,iobj) = yStar(:,1);
+            hatStd(:, iobj) = yStar(:,2);
         end
     end
-    fprintf('Building model %d, time used %f.\n', i, toc);
-end
 
 
-cgp.gp_func = @clusteredGPEst;
-cgp.datai = @get_cluster;
-cgp.yi = @get_y;
-cgp.func = @func; 
 
-    function yi = get_y(ci)
-        ci_index  = cgp.idx(ci,1:cgp.clusteringOpts.L1);
-        yi = y(ci_index);
-    end
-
-
-    function datai = get_cluster(ci)
-        ci_index  = cgp.idx(ci,1:cgp.clusteringOpts.L1);
-        datai = data(ci_index,:);
-    end
-
-    function [hat_y, hat_std] = func(xStar)
-        yStar = clusteredGPEst(xStar);
-        hat_y = yStar(:,1);
-        hat_std = yStar(:,2);
-    end
-    function yStar = clusteredGPEst(xStar)
-        
+    function yStar = clusteredGPEst(cgp, xStar)
         [m,~] = size(xStar);
-        
         yStar = zeros(m,2);
-        
-        parClusteringSize = cgp.clusteringOpts.clusteringSize;
+        parClusteringSize = clusteredGPModel.clusteringSize;
         parCenter = getfieldwithdefault(cgp,'centers',[]);
         closest = zeros(m,1);
-       for ii=1:m  % m points to estimate
+        for ii=1:m  % m points to estimate
             % find the nearest centers to test
             if  parClusteringSize > 1
                 d = parCenter - repmat(xStar(ii,:), parClusteringSize,1);
@@ -101,16 +135,8 @@ cgp.func = @func;
             else
                 closest(ii) = 1;
             end
-            
             yStar(ii,:) = cgp.models{closest(ii)}.gp_func(xStar(ii,:));
-
-       end
-%        
-% %        parModels = [cgp.models{closest}];
-% 
-%        for ii = 1:m
-%             % gpt = gp_predict(cgp.models{closest}, xStar(ii,:));
-%         end
+        end
         
     end
 end

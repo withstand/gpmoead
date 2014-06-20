@@ -1,25 +1,26 @@
-function gp = gptrain( data, y, gp_opts )
+function gp = gptrain( data, y, oldgp )
 %GP_HYP_EST Summary of this function goes here
 %   Detailed explanation goes here
+gp = oldgp;
 [~, dimension] = size(data);
 
-Delta = getfieldwithdefault(gp_opts, 'Delta', 0);
+Delta = getfieldwithdefault(oldgp, 'Delta', 0);
 
-lhp = getfieldwithdefault(gp_opts,'lhp',[-6*ones(1,dimension) ones(1,dimension)]);
-uhp = getfieldwithdefault(gp_opts,'uhp',[6*ones(1,dimension) 2*ones(1,dimension)]);
+lhp = getfieldwithdefault(oldgp,'lhp',[-6*ones(1,dimension) ones(1,dimension)]);
+uhp = getfieldwithdefault(oldgp,'uhp',[6*ones(1,dimension) 2*ones(1,dimension)]);
 
-hp0 = getfieldwithdefault(gp_opts,'hp0',...
-    [log10(getfieldwithdefault(gp_opts,'theta', ones(1,dimension))), ...
-    getfieldwithdefault(gp_opts,'p', 2*ones(1,dimension))]);
+hp0 = getfieldwithdefault(oldgp,'hp0',...
+    [log10(getfieldwithdefault(oldgp,'theta', ones(1,dimension))), ...
+    getfieldwithdefault(oldgp,'p', 2*ones(1,dimension))]);
 %     [ ]);
 
 if sum(Delta)~= 0  %noisy
     %     2 * dimension + 1
     s2 = std(y) * std(y);
-    lsigma2 =  getfieldwithdefault(gp_opts,'lsigma2', 1e-5*s2);
-    usigma2 = getfieldwithdefault(gp_opts,'lsigma2', 1e5*s2);
-    sigma20 = getfieldwithdefault(gp_opts,'lsigma20', ...
-        getfieldwithdefault(gp_opts,'sigma2',s2));
+    lsigma2 =  getfieldwithdefault(oldgp,'lsigma2', 1e-5*s2);
+    usigma2 = getfieldwithdefault(oldgp,'lsigma2', 1e5*s2);
+    sigma20 = getfieldwithdefault(oldgp,'lsigma20', ...
+        getfieldwithdefault(oldgp,'sigma2',s2));
     lhp = [lsigma2 lhp];
     uhp = [usigma2 uhp];
     hp0 = [sigma20 hp0];
@@ -27,57 +28,32 @@ else  %noisy-free
     %     2 * dimension
 end
 
-refresh = getfieldwithdefault(gp_opts,'refresh',0);
+refresh = getfieldwithdefault(oldgp,'refresh',0);
 if refresh
     strDisplay = 'iter';
 else
     strDisplay = 'none';
 end
-algorithm = getfieldwithdefault(gp_opts,'algorithm', 'pd');
+algorithm = getfieldwithdefault(oldgp,'algorithm', 'pd');
 if strcmp(algorithm,'de')
-    [hp,min_nlml]  = optimizer_de(max(80,10*numel(lhp)),max(100,50*numel(lhp)));
-elseif strcmp(algorithm,'local')
-    %% Use fmincon
-    [hp,min_nlml] = fmincon(@nlml,hp0,[],[],[],[], lhp,uhp, ...
-        [],optimset('Display',strDisplay,'Algorithm','interior-point'));
+    infPopsize = getfieldwithdefault(oldgp,'infPopsize', ...
+        max(80,10*numel(lhp)));
+    infGeneration = getfieldwithdefault(oldgp, 'infGeneration', ...
+        max(200,50*numel(lhp)));
+    [hp,min_nlml]  = optimizer_de(infPopsize, infGeneration);
 elseif strcmp(algorithm,'pd')
-    [hp,min_nlml] = fmincon(@nlml_pd,hp0,[],[],[],[], lhp,uhp, ...
+    [hp,min_nlml] = fmincon(@nlml_pd, hp0,[],[],[],[], lhp,uhp, ...
         [],optimset('Display',strDisplay,...%'Algorithm','interior-point', ...
-        'GradObj','on'));
-elseif strcmp(algorithm,'de-local')
-    hp = optimizer_de(40,50);
-    [hp,min_nlml] = fmincon(@nlml,hp,[],[],[],[], lhp,uhp, ...
-        [],optimset('Display',strDisplay,'Algorithm','interior-point'));
-elseif strcmp(algorithm,'pd-local')
-    [hp,~] = fmincon(@nlml_pd,hp0,[],[],[],[], lhp,uhp, ...
-        [],optimset('Display',strDisplay,'Algorithm','interior-point', ...
-        'GradObj','on'));
-    [hp,min_nlml] = fmincon(@nlml,hp,[],[],[],[], lhp,uhp, ...
-        [],optimset('Display',strDisplay,'Algorithm','interior-point'));
-elseif strcmp(algorithm,'de-pd')
-    hp = optimizer_de(40,50);
-    [hp,min_nlml] = fmincon(@nlml_pd,hp,[],[],[],[], lhp,uhp, ...
-        [],optimset('Display',strDisplay,...'Algorithm','interior-point', ...
-        'GradObj','on'));
-    
-elseif strcmp(algorithm,'multi-start')
-    opts = optimset('Display',strDisplay,...%'Algorithm','interior-point', ...
-        'GradObj','on');
-    problem = createOptimProblem('fmincon','objective',...
-        @nlml_pd,'x0',hp0,'lb',lhp,'ub',uhp,'options',opts);
-    ms = MultiStart;
-    [hp,min_nlml] = run(ms,problem,dimension);
-    
+        'GradObj','on'));   
 else
     error('Unrecognized algorithm %s', algorithm);
 end
 
-
+gp = hyper2opts(gp, hp);
+gp.nlml = min_nlml;
 % return hyperparameters as gpOpts struct
-gpOpts = hyper2opts(gp_opts, hp);
-gpOpts.nlml = min_nlml;
-gp = gp_predict(data,y,gpOpts);
-gp.gp_func = @gp_evaluate;
+gp = gp_predict(data, y, gp);
+gp.gp_func = @gpevaluate;
 
     function [hp,min_nlml] = optimizer_de(NP,itermax)
         %% Setup Optimization Algorithm to solve minimize minus-log-marginal-likelihood
@@ -115,13 +91,13 @@ gp.gp_func = @gp_evaluate;
 
 %%
     function likelihood = nlml(parameters)
-        gpOpts_nlml = hyper2opts(gp_opts, parameters);
+        gpOpts_nlml = hyper2opts([], parameters);
         gp_nlml = gp_predict(data,y, gpOpts_nlml);
         likelihood = gp_nlml.nlml;
     end
 %%
     function [likelihood,likelihood_pd] = nlml_pd(parameters)
-        gpOpts_nlml = hyper2opts(gp_opts, parameters);
+        gpOpts_nlml = hyper2opts([], parameters);
         [gp_nlml,likelihood_pd] = gp_predict(data,y, gpOpts_nlml);
         likelihood = gp_nlml.nlml;
     end
@@ -136,7 +112,7 @@ gp.gp_func = @gp_evaluate;
         end
     end
 
-    function yStar = gp_evaluate(xStar)
+    function yStar = gpevaluate(xStar)
         %% make prediction at specific point xStar
         
         [sampleSize, dimension] = size(gp.data);
@@ -151,9 +127,9 @@ gp.gp_func = @gp_evaluate;
         end
         yStar = zeros(newSites,2);
         %   xS = reshape(xStar, 1, numel(xStar));
-        Delta = getfieldwithdefault(gp.gpOpts,'Delta',0);
+        Delta = getfieldwithdefault(gp,'Delta',0);
         if sum(Delta)~=0 %noisy
-            k = gp.sigma2 * gp.corr(gp.data, xS, gp.gpOpts);
+            k = gp.sigma2 * gp.corr(gp.data, xS, gp);
             for i=1:newSites
                 invK_k = gp.L' \(gp.L \ k(:,i));
                 hat_y = gp.mu + k(:,i)' * gp.invK_y_mu;
@@ -166,7 +142,7 @@ gp.gp_func = @gp_evaluate;
                 yStar(i,:) = [hat_y, hat_std];
             end
         else
-            k = gp.corr(gp.data, xS, gp.gpOpts);
+            k = gp.corr(gp.data, xS, gp);
             for i=1:newSites
                 invK_k = gp.L' \(gp.L \ k(:,i));
                 hat_y = gp.mu + k(:,i)' * gp.invK_y_mu;
@@ -182,9 +158,9 @@ gp.gp_func = @gp_evaluate;
         end
     end
 
-    function [gp,glml_pd] = gp_predict(data,y, gpOpts)
+    function [gp,glml_pd] = gp_predict(data,y, oldGp)
         
-        
+        gp = oldGp;
         % helper function to get default correlation function
         if nargin == 0
             gp.corr = @expCorr;
@@ -193,13 +169,13 @@ gp.gp_func = @gp_evaluate;
 %         narginchk(3,3);
         
         % get default correlation function, or use provided correlation function
-        corrFunc = getfieldwithdefault(gpOpts,'corr',@expCorr);
+        corrFunc = getfieldwithdefault(oldGp,'corr',@expCorr);
         
         [sampleSize, dimension] = size(data);
         assert(sampleSize==numel(y));
         
         % Delta must be provided or the problem will be treated as noisy free
-        Delta = getfieldwithdefault(gpOpts,'Delta',0);
+        Delta = getfieldwithdefault(oldGp,'Delta',0);
         if numel(Delta)==1
             Delta = Delta * ones(sampleSize,1);
         end
@@ -207,11 +183,11 @@ gp.gp_func = @gp_evaluate;
         
         
         %% trainning
-        R = corrFunc(data, data, gpOpts);
+        R = corrFunc(data, data, oldGp);
         
         if sum(Delta)~=0   % noisy
-            assert(isfield(gpOpts, 'sigma2'));
-            sigma2_est = gpOpts.sigma2;
+            assert(isfield(oldGp, 'sigma2'));
+            sigma2_est = oldGp.sigma2;
             K = sigma2_est * R + diag(Delta);
         else % noisy-free
             K = R;
@@ -276,14 +252,14 @@ gp.gp_func = @gp_evaluate;
                 xk = data(:,k);
                 d_k = reshape(abs(xk(repmat((1:sampleSize)', sampleSize,1))- ...
                     xk(reshape(repmat(1:sampleSize, sampleSize,1), sampleSize*sampleSize,1))),...
-                    sampleSize, sampleSize) / gpOpts.theta(k);
+                    sampleSize, sampleSize) / oldGp.theta(k);
                 Kinv = L'\(L\eye(sampleSize));
                 
                 if sum(Delta)~=0
-                    pdK_theta_k = sigma2_est *  gpOpts.p(k) / gpOpts.theta(k) * ...
-                        (d_k .^ gpOpts.p(k)) .* R;
-                    pdK_p_k = - sigma2_est *  gpOpts.p(k) / gpOpts.theta(k) * ...
-                        log(d_k) .* (d_k .^ gpOpts.p(k)) .* R;
+                    pdK_theta_k = sigma2_est *  oldGp.p(k) / oldGp.theta(k) * ...
+                        (d_k .^ oldGp.p(k)) .* R;
+                    pdK_p_k = - sigma2_est *  oldGp.p(k) / oldGp.theta(k) * ...
+                        log(d_k) .* (d_k .^ oldGp.p(k)) .* R;
                     %                     pdK_p_k(((1:sampleSize)'-1) * sampleSize + (1:sampleSize)') = 0;
                     pdK_p_k(d_k==0)=0;
                     glml_pd(start+k) = 0.5 * trace(Kinv * pdK_theta_k) - ...
@@ -291,10 +267,10 @@ gp.gp_func = @gp_evaluate;
                     glml_pd(start+k+dimension) = 0.5 * trace(Kinv * pdK_p_k) - ...
                         0.5 * y_mu' * (Kinv * (pdK_p_k * (Kinv * y_mu)));
                 else
-                    pdK_theta_k = gpOpts.p(k) / gpOpts.theta(k) * ...
-                        (d_k .^ gpOpts.p(k)) .* R;
-                    pdK_p_k = - gpOpts.p(k) / gpOpts.theta(k) * ...
-                        log(d_k) .* (d_k .^ gpOpts.p(k)) .* R;
+                    pdK_theta_k = oldGp.p(k) / oldGp.theta(k) * ...
+                        (d_k .^ oldGp.p(k)) .* R;
+                    pdK_p_k = - oldGp.p(k) / oldGp.theta(k) * ...
+                        log(d_k) .* (d_k .^ oldGp.p(k)) .* R;
                     %                   pdK_p_k(((1:sampleSize)'-1) * sampleSize + (1:sampleSize)') = 0;
                     pdK_p_k(d_k==0)=0;
                     
@@ -321,10 +297,9 @@ gp.gp_func = @gp_evaluate;
         gp.invK_y_mu = invK_y_mu;
         gp.y_mu_invK_y_mu = y_mu_invK_y_mu;
 
-        gp.nlml = negativeLML;
-        
+        gp.nlml = negativeLML;        
         gp.corr = corrFunc;
-        gp.gpOpts = gpOpts;
+%         gp.gpOpts = gpOpts;
         
         
         
