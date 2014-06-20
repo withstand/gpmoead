@@ -97,8 +97,8 @@ mopForMoeadde.weightArray = weightArray;
 mopForMoeadde.nbrs = nbrs;
 mopForMoeadde.fitness = inf;
 
-isFirstBuild = 1;
-cgp = cell(1,nobj);
+% isFirstBuild = 1;
+cgp = [];
 funcs = cell(1, nobj);
 % fprintf('%10s\t%15s\t%15s\t%15s\t%15s\n',...
 %     'Iter', 'Time', 'Evaluated','Candidate','max fitness');
@@ -111,34 +111,36 @@ for iGeneration = 1:1000
     
     eeID = tic;
     % buildCGPmodel
-    disp('Building meta-model.....');
-    if isFirstBuild
-        for iObj = 1:nobj
-            cgp{iObj} = clusteredgptrain(evaluatedDesignArray, ...
-                evaluatedObjective(:,iObj),[],...
-                struct('algorithm','de','refresh',0));
-            funcs{iObj} = cgp{iObj}.gp_func;
-        end
-        isFirstBuild = 0;
-    else
-        for iObj = 1:nobj
-            cgp{iObj} = clusteredgptrain(evaluatedDesignArray, ...
-                evaluatedObjective(:,iObj),[],...
-                struct('algorithm','pd','refresh',0), cgp{iObj});
-            funcs{iObj} = cgp{iObj}.gp_func;
-        end
-    end
+%     disp('Building meta-model.....');
+    cgp = clusteredgptrain(evaluatedDesignArray,...
+        evaluatedObjective, cgp);
+%     if isFirstBuild
+%         for iObj = 1:nobj
+%             cgp{iObj} = clusteredgptrain(evaluatedDesignArray, ...
+%                 evaluatedObjective(:,iObj),[],...
+%                 struct('algorithm','de','refresh',0));
+%             funcs{iObj} = cgp{iObj}.gp_func;
+%         end
+%         isFirstBuild = 0;
+%     else
+%         for iObj = 1:nobj
+%             cgp{iObj} = clusteredgptrain(evaluatedDesignArray, ...
+%                 evaluatedObjective(:,iObj),[],...
+%                 struct('algorithm','pd','refresh',0), cgp{iObj});
+%             funcs{iObj} = cgp{iObj}.gp_func;
+%         end
+%     end
     % buildsurrogatedmop
     
     mopForMoeadde.fitnessStruct.name = 'negte';
     %     mopForMoeadde.fitnessStruct.name = 'eite';
     %             mopForMoeadde.fitnessStruct.name = 'wsei';
     mopForMoeadde.pop = [];
-    mopForMoeadde.func = mofunction(funcs);
-    %     mopForMoeadde.evaluated = evaluatedDesignArray;
-    %     mopForMoeadde.evaluatedObjective = evaluatedObjective;
+    mopForMoeadde.func = cgp.func; %mofunction(funcs);
+    mopForMoeadde.evaluated = evaluatedDesignArray;
+    mopForMoeadde.evaluatedObjective = evaluatedObjective;
     
-%     showmop(newfigure2ax,mopForMoeadde);
+    showmop(newfigure2ax,mopForMoeadde);
     
     %     pause
     
@@ -250,6 +252,7 @@ for iGeneration = 1:1000
     fprintf('%10d\t%15.4f\t%15.4f\t%15d\t%15.4f\n',...
         iGeneration, toc(eeID), size(evaluatedDesignArray,1),...
         size(candidateArray,1), max(mopForMoeadde.fitness));
+    fprintf('-----------------------------------------------------------------------------\n');
     
     %     disp([candidateArray   candidateObjective candidateObjectiveEst ...
     %         candidateStdEst candidateFitness]);
