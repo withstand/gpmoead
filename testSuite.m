@@ -8,5 +8,5 @@ for i=1:numel(mops)
     mops{i}.npop = 400;
     mops{i}.nnbr = 2;
     mops{i} = gpmoeadde(mops{i});
-    figure;plot(mops{i}.PF(:,1),mops{i}.PF(:,2),'go')
+    figure;plot(mops{i}.PF(:,1),mopsdd810412{i}.PF(:,2),'go')
 end
